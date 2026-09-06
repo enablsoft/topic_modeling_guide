@@ -1,5 +1,6 @@
 """LDA Topic Modeling with topic number optimization."""
 
+import os
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -294,6 +295,92 @@ def _find_elbow(values: List[float]) -> int:
     return int(np.argmax(distances))
 
 
+def run_lda_multicore(texts: List[str], n_topics: int, max_features: int = 5000,
+                      n_top_words: int = 15, iterations: int = 400,
+                      passes: int = 20) -> Dict[str, Any]:
+    """Run Gensim LdaMulticore and return standard results."""
+    import multiprocessing
+    try:
+        from gensim.models import LdaMulticore
+        from gensim import corpora
+        from gensim.utils import simple_preprocess
+    except ImportError:
+        raise ImportError("gensim is required. Install with: pip install gensim")
+
+    n_workers = max(1, multiprocessing.cpu_count() - 1)
+
+    tokenized = [simple_preprocess(t, deacc=True) for t in texts]
+    dictionary = corpora.Dictionary(tokenized)
+    dictionary.filter_extremes(no_below=2, no_above=0.95, keep_n=max_features)
+    corpus = [dictionary.doc2bow(doc) for doc in tokenized]
+
+    with st.spinner(f"Fitting LdaMulticore ({n_topics} topics, {passes} passes, {n_workers} workers)..."):
+        model = LdaMulticore(
+            corpus=corpus,
+            id2word=dictionary,
+            num_topics=n_topics,
+            passes=passes,
+            iterations=iterations,
+            workers=n_workers,
+            random_state=42,
+        )
+
+    topics_matrix = model.get_topics()  # (n_topics, vocab_size)
+    feature_names = [dictionary[i] for i in range(len(dictionary))]
+
+    topics = {}
+    topic_word_weights = {}
+    for topic_idx in range(n_topics):
+        top_indices = topics_matrix[topic_idx].argsort()[-n_top_words:][::-1]
+        top_words = [feature_names[i] for i in top_indices]
+        top_weights = [float(topics_matrix[topic_idx][i]) for i in top_indices]
+        topics[f"Topic {topic_idx + 1}"] = top_words
+        topic_word_weights[f"Topic {topic_idx + 1}"] = list(zip(top_words, top_weights))
+
+    topic_labels = {name: ", ".join(words[:3]) for name, words in topics.items()}
+
+    doc_topic_matrix = np.zeros((len(corpus), n_topics))
+    for doc_idx, doc_bow in enumerate(corpus):
+        dist = model.get_document_topics(doc_bow, minimum_probability=0.0)
+        for topic_id, prob in dist:
+            if topic_id < n_topics:
+                doc_topic_matrix[doc_idx, topic_id] = prob
+
+    doc_topic_df = pd.DataFrame(
+        doc_topic_matrix,
+        columns=[f"Topic {i+1}" for i in range(n_topics)]
+    )
+    doc_topic_df["dominant_topic"] = doc_topic_df.idxmax(axis=1)
+    doc_topic_df["dominant_topic_prob"] = doc_topic_df.iloc[:, :n_topics].max(axis=1)
+    doc_topic_df["text_preview"] = [t[:100] + "..." if len(t) > 100 else t for t in texts]
+
+    topic_corr = np.corrcoef(doc_topic_matrix.T)
+    topic_sizes = doc_topic_df["dominant_topic"].value_counts().sort_index()
+    _log_perp = model.log_perplexity(corpus)
+    perplexity = float(np.exp(-_log_perp))
+    log_likelihood = float(_log_perp)
+
+    return {
+        "model": model,
+        "model_type": "multicore",
+        "gensim_dictionary": dictionary,
+        "gensim_corpus": corpus,
+        "vectorizer": None,
+        "dtm": None,
+        "topics": topics,
+        "topic_word_weights": topic_word_weights,
+        "topic_labels": topic_labels,
+        "doc_topic_matrix": doc_topic_matrix,
+        "doc_topic_df": doc_topic_df,
+        "topic_correlations": topic_corr,
+        "topic_sizes": topic_sizes,
+        "feature_names": feature_names,
+        "n_topics": n_topics,
+        "perplexity": perplexity,
+        "log_likelihood": log_likelihood,
+    }
+
+
 def run_lda(texts: List[str], n_topics: int, max_features: int = 5000,
             max_iter: int = 50, n_top_words: int = 15) -> Dict[str, Any]:
     """Run LDA topic modeling and return comprehensive results."""
@@ -553,14 +640,22 @@ def generate_pyldavis(results: Dict[str, Any]) -> Optional[str]:
     """Generate pyLDAvis HTML visualization."""
     try:
         import pyLDAvis
-        import pyLDAvis.lda_model
-
-        vis_data = pyLDAvis.lda_model.prepare(
-            results["model"], results["dtm"], results["vectorizer"],
-            mds="mmds", sort_topics=False
-        )
-        html = pyLDAvis.prepared_data_to_html(vis_data)
-        return html
+        if results.get("model_type") == "multicore":
+            import pyLDAvis.gensim_models
+            vis_data = pyLDAvis.gensim_models.prepare(
+                results["model"],
+                results["gensim_corpus"],
+                results["gensim_dictionary"],
+                mds="mmds",
+                sort_topics=False,
+            )
+        else:
+            import pyLDAvis.lda_model
+            vis_data = pyLDAvis.lda_model.prepare(
+                results["model"], results["dtm"], results["vectorizer"],
+                mds="mmds", sort_topics=False,
+            )
+        return pyLDAvis.prepared_data_to_html(vis_data)
     except Exception as e:
         st.warning(f"pyLDAvis visualization failed: {e}")
         return None

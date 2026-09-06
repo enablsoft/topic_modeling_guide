@@ -367,6 +367,194 @@ print("Export your results by uncommenting the lines above")
     return nbformat.writes(nb)
 
 
+def _fig_to_html(fig) -> str:
+    """Convert a Plotly figure to a self-contained HTML string."""
+    return fig.to_html(full_html=True, include_plotlyjs="cdn")
+
+
+def _matplotlib_fig_to_png(fig) -> bytes:
+    """Convert a matplotlib figure to PNG bytes."""
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=150)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def _collect_lda_figures(model_results: Dict[str, Any]) -> List[tuple]:
+    """Return list of (zip_path, bytes) for LDA visualizations."""
+    from utils.lda_modeling import (
+        plot_topic_words, plot_topic_distribution, plot_topic_correlations,
+        plot_doc_topic_heatmap, plot_word_clouds, plot_topic_tuning,
+        plot_ldatuning_results, find_optimal_k_ldatuning,
+    )
+    from utils.visualization import plot_topic_similarity_network
+
+    figs = []
+
+    def _add_plotly(name, fn, *args, **kwargs):
+        try:
+            fig = fn(*args, **kwargs)
+            if fig is not None:
+                figs.append((f"lda/figures/{name}.html", _fig_to_html(fig).encode()))
+        except Exception:
+            pass
+
+    _add_plotly("topic_words", plot_topic_words, model_results)
+    _add_plotly("topic_distribution", plot_topic_distribution, model_results)
+    _add_plotly("topic_correlations", plot_topic_correlations, model_results)
+    _add_plotly("doc_topic_heatmap", plot_doc_topic_heatmap, model_results, 50)
+
+    if model_results.get("topic_correlations") is not None:
+        _add_plotly("topic_network", plot_topic_similarity_network,
+                    model_results["topic_correlations"], title="LDA Topic Network")
+
+    if model_results.get("tuning") is not None:
+        _add_plotly("topic_tuning", plot_topic_tuning, model_results["tuning"])
+
+    if model_results.get("ldatuning_results") is not None:
+        try:
+            ld = model_results["ldatuning_results"]
+            optimal_k = find_optimal_k_ldatuning(ld)
+            fig = plot_ldatuning_results(ld, optimal_k=optimal_k)
+            if fig is not None:
+                figs.append(("lda/figures/ldatuning_results.html", _fig_to_html(fig).encode()))
+        except Exception:
+            pass
+
+    # Word clouds → PNG
+    try:
+        wc_figs = plot_word_clouds(model_results)
+        for i, wc_fig in enumerate(wc_figs):
+            try:
+                figs.append((f"lda/figures/wordcloud_topic_{i+1}.png", _matplotlib_fig_to_png(wc_fig)))
+                import matplotlib.pyplot as plt
+                plt.close(wc_fig)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return figs
+
+
+def _collect_bertopic_figures(model_results: Dict[str, Any]) -> List[tuple]:
+    """Return list of (zip_path, bytes) for BERTopic visualizations."""
+    from utils.bertopic_modeling import (
+        plot_topics_barchart, plot_topics_scatter, plot_hierarchy, plot_heatmap,
+        plot_documents, plot_topic_correlations as bertopic_corr,
+    )
+
+    figs = []
+
+    def _add(name, fn, *args, **kwargs):
+        try:
+            fig = fn(*args, **kwargs)
+            if fig is not None:
+                figs.append((f"bertopic/figures/{name}.html", _fig_to_html(fig).encode()))
+        except Exception:
+            pass
+
+    _add("barchart", plot_topics_barchart, model_results)
+    _add("intertopic_map", plot_topics_scatter, model_results)
+    _add("hierarchy", plot_hierarchy, model_results)
+    _add("heatmap", plot_heatmap, model_results)
+    _add("documents", plot_documents, model_results)
+    _add("topic_correlations", bertopic_corr, model_results)
+
+    return figs
+
+
+def _collect_turftopic_figures(model_results: Dict[str, Any]) -> List[tuple]:
+    """Return list of (zip_path, bytes) for Turftopic visualizations."""
+    from utils.turftopic_modeling import (
+        plot_topic_words, plot_topic_distribution,
+        plot_topic_correlations, plot_doc_topic_heatmap,
+    )
+
+    figs = []
+
+    def _add(name, fn, *args, **kwargs):
+        try:
+            fig = fn(*args, **kwargs)
+            if fig is not None:
+                figs.append((f"turftopic/figures/{name}.html", _fig_to_html(fig).encode()))
+        except Exception:
+            pass
+
+    _add("topic_words", plot_topic_words, model_results)
+    _add("topic_distribution", plot_topic_distribution, model_results)
+    _add("topic_correlations", plot_topic_correlations, model_results)
+    _add("doc_topic_heatmap", plot_doc_topic_heatmap, model_results, 50)
+
+    return figs
+
+
+def _collect_bunka_figures(model_results: Dict[str, Any]) -> List[tuple]:
+    """Return list of (zip_path, bytes) for BunkaTopics visualizations."""
+    from utils.bunka_modeling import (
+        plot_bunka_map, plot_bunka_docs,
+        plot_topic_words, plot_topic_distribution,
+    )
+
+    figs = []
+
+    def _add(name, fn, *args, **kwargs):
+        try:
+            fig = fn(*args, **kwargs)
+            if fig is not None:
+                figs.append((f"bunkatopics/figures/{name}.html", _fig_to_html(fig).encode()))
+        except Exception:
+            pass
+
+    _add("topic_map", plot_bunka_map, model_results)
+    _add("document_map", plot_bunka_docs, model_results)
+    _add("topic_words", plot_topic_words, model_results)
+    _add("topic_distribution", plot_topic_distribution, model_results)
+
+    return figs
+
+
+def _collect_stm_figures(model_results: Dict[str, Any]) -> List[tuple]:
+    """Return list of (zip_path, bytes) for STM visualizations."""
+    from utils.stm_modeling import (
+        plot_topic_words, plot_topic_correlations,
+        plot_quality, plot_topic_distribution,
+    )
+    from utils.visualization import plot_topic_similarity_network
+
+    figs = []
+
+    def _add(name, fn, *args, **kwargs):
+        try:
+            fig = fn(*args, **kwargs)
+            if fig is not None:
+                figs.append((f"stm/figures/{name}.html", _fig_to_html(fig).encode()))
+        except Exception:
+            pass
+
+    _add("topic_words", plot_topic_words, model_results)
+    _add("topic_distribution", plot_topic_distribution, model_results)
+    _add("topic_correlations", plot_topic_correlations, model_results)
+
+    if model_results.get("coherence") and any(c != 0 for c in model_results["coherence"]):
+        _add("topic_quality", plot_quality, model_results)
+
+    if model_results.get("topic_correlations") is not None:
+        _add("topic_network", plot_topic_similarity_network,
+             model_results["topic_correlations"], title="STM Topic Network")
+
+    return figs
+
+
+_FIGURE_COLLECTORS = {
+    "lda": _collect_lda_figures,
+    "bertopic": _collect_bertopic_figures,
+    "turftopic": _collect_turftopic_figures,
+    "bunkatopics": _collect_bunka_figures,
+    "stm": _collect_stm_figures,
+}
+
+
 def create_download_zip(results: Dict[str, Dict[str, Any]],
                          config: Dict[str, Any],
                          notebook_str: str) -> bytes:
@@ -387,13 +575,20 @@ def create_download_zip(results: Dict[str, Dict[str, Any]],
                 model_results["doc_topic_df"].to_csv(csv_buffer, index=False)
                 zf.writestr(f"{prefix}document_topic_matrix.csv", csv_buffer.getvalue())
 
-            # Topics summary
-            if "topics" in model_results:
-                topics_data = {}
-                for topic_name, words in model_results["topics"].items():
-                    topics_data[topic_name] = ", ".join(words)
+            # Topics summary — use topic_word_weights (always a dict) because
+            # BERTopic stores per-doc topic IDs in "topics" (a list, not a dict).
+            if "topic_word_weights" in model_results and isinstance(model_results["topic_word_weights"], dict):
                 topics_df = pd.DataFrame([
-                    {"Topic": k, "Top Words": v} for k, v in topics_data.items()
+                    {"Topic": name, "Top Words": ", ".join(w for w, _ in ww[:15])}
+                    for name, ww in model_results["topic_word_weights"].items()
+                ])
+                csv_buffer = io.StringIO()
+                topics_df.to_csv(csv_buffer, index=False)
+                zf.writestr(f"{prefix}topics_summary.csv", csv_buffer.getvalue())
+            elif "topics" in model_results and isinstance(model_results["topics"], dict):
+                topics_df = pd.DataFrame([
+                    {"Topic": k, "Top Words": ", ".join(v)}
+                    for k, v in model_results["topics"].items()
                 ])
                 csv_buffer = io.StringIO()
                 topics_df.to_csv(csv_buffer, index=False)
@@ -437,6 +632,15 @@ def create_download_zip(results: Dict[str, Dict[str, Any]],
                 csv_buffer = io.StringIO()
                 quality_df.to_csv(csv_buffer, index=False)
                 zf.writestr(f"{prefix}topic_quality.csv", csv_buffer.getvalue())
+
+            # Visualizations — HTML (Plotly) and PNG (matplotlib)
+            collector = _FIGURE_COLLECTORS.get(model_name)
+            if collector is not None:
+                try:
+                    for zip_path, fig_bytes in collector(model_results):
+                        zf.writestr(zip_path, fig_bytes)
+                except Exception:
+                    pass
 
         # Add config info
         config_info = {k: str(v) for k, v in config.items()}

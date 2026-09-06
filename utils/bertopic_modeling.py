@@ -21,11 +21,17 @@ def run_bertopic(texts: List[str], embeddings: Optional[np.ndarray] = None,
     vectorizer = CountVectorizer(stop_words="english", ngram_range=n_gram_range,
                                   min_df=2, max_df=0.95)
 
-    representation_model = KeyBERTInspired()
+    # KeyBERTInspired re-embeds candidate words with BERTopic's internal model and
+    # computes cosine similarity against the document embeddings. When external
+    # embeddings (e.g. OpenAI 1536-dim) are provided but the internal model is a
+    # different SBERT variant (384-dim), this raises a dimension mismatch. Skip
+    # KeyBERTInspired whenever the embedding dims could be mismatched.
+    use_keybert = not (embeddings is not None and embedding_model is None)
+    representation_model = KeyBERTInspired() if use_keybert else None
 
     # Configure BERTopic
     topic_model = BERTopic(
-        embedding_model=embedding_model if embedding_model else None,
+        embedding_model=embedding_model if embedding_model else "all-MiniLM-L6-v2",
         vectorizer_model=vectorizer,
         representation_model=representation_model,
         min_topic_size=min_topic_size,
