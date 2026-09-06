@@ -35,5 +35,10 @@ openai==1.82.0
 voyageai==0.3.2
 google-genai==1.14.0
 
+# LLM topic labeling providers (optional — install the ones you use)
+# openai above covers OpenAI labeling
+anthropic>=0.40.0
+google-generativeai>=0.8.0
+
 # STM via R (optional — skip if R is not installed)
 # rpy2>=3.5.0

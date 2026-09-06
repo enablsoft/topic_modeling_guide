@@ -20,7 +20,7 @@ A comprehensive, interactive topic modeling suite built with [Streamlit](https:/
 | **Text Preprocessing** | Lowercase, punctuation/number removal, stopword removal, lemmatization (spaCy), content-words-only filter |
 | **Master Topic List** | Embedding-based deduplication across all models with adjustable similarity threshold |
 | **Visualizations** | Word clouds, heatmaps, topic networks, pyLDAvis, BERTopic interactive plots, evolution over time |
-| **Export** | Jupyter notebook generation, ZIP download with CSVs, R script for STM |
+| **Export** | Jupyter notebook generation, ZIP download with interactive HTML visualizations, CSVs, and R script for STM |
 
 ---
 
@@ -121,16 +121,17 @@ Then open [http://localhost:8501](http://localhost:8501) in your browser.
 6. **Configure settings** — Set number of topics, enable auto-detection, toggle LLM labeling, tune model-specific parameters.
 7. **Run** — Click "Run Topic Modeling" and explore results across tabs.
 8. **Master Topic List** — Review the deduplicated cross-model topic list at the bottom.
-9. **Download** — Export results as a ZIP (CSVs + Jupyter notebook).
+9. **Download** — Click "Generate Download Package" to export a ZIP containing interactive HTML visualizations, CSVs, and a Jupyter notebook. Results remain visible while the ZIP is being built.
 
 ---
 
 ## Topic Models
 
 ### LDA (Latent Dirichlet Allocation)
-- Scikit-learn implementation with online variational inference
+- **Gensim LdaMulticore** — parallel variational Bayes, no external dependencies
+- Configurable passes (training epochs) and E-step iterations; automatically uses all available CPU cores minus one
 - **Topic number optimization**: Python-based (perplexity, log-likelihood, UMass coherence with elbow detection) and R-based (`ldatuning` with Griffiths 2004, CaoJuan 2009, Arun 2010, Deveaud 2014)
-- pyLDAvis interactive visualization
+- pyLDAvis interactive visualization (rendered via `pyLDAvis.gensim_models`)
 - Word clouds, topic correlation heatmap, document-topic matrix
 
 ### BERTopic
@@ -164,15 +165,64 @@ LLM labeling via `turftopic.analyzers.OpenAIAnalyzer` generates topic names and 
 
 ## LLM Topic Labeling
 
-When enabled, an OpenAI model (e.g., `gpt-4o-mini`) is used to generate human-readable topic names and descriptions:
+When enabled, an LLM generates human-readable topic names and descriptions. Three providers are supported, each with a **Verify Connection** button to test the API key before running:
 
-| Model | Mechanism |
+| Provider | Models available |
+|---|---|
+| **OpenAI** | gpt-4o-mini, gpt-4o, gpt-4.1-nano, gpt-4.1-mini |
+| **Anthropic (Claude)** | claude-haiku-4-5, claude-sonnet-4-6, claude-opus-4-7 |
+| **Google Gemini** | gemini-1.5-flash, gemini-1.5-pro, gemini-2.0-flash |
+
+How each model is labeled:
+
+| Topic Model | Mechanism |
 |---|---|
 | BERTopic | `bertopic.representation.OpenAI` — regenerates topic representations |
 | Turftopic | `turftopic.analyzers.OpenAIAnalyzer` — returns names, descriptions, and optional document summaries |
 | BunkaTopics | `bunka.get_clean_topic_name(ChatOpenAI(...))` — refines keyword-based names |
 
 Results appear in dedicated "LLM Labels" tabs and are incorporated into the master topic list.
+
+---
+
+## Download Package
+
+Click **Generate Download Package** in the app to produce a ZIP containing:
+
+```
+topic_modeling_results.zip
+├── topic_modeling_analysis.ipynb   # Runnable Jupyter notebook
+├── analysis_config.json            # Settings used for the run
+├── lda/
+│   ├── figures/                    # Interactive HTML charts + PNG word clouds
+│   │   ├── topic_words.html
+│   │   ├── topic_distribution.html
+│   │   ├── topic_correlations.html
+│   │   ├── doc_topic_heatmap.html
+│   │   ├── topic_network.html
+│   │   ├── topic_tuning.html       # (if auto-optimization was run)
+│   │   ├── ldatuning_results.html  # (if R ldatuning was run)
+│   │   └── wordcloud_topic_N.png
+│   ├── document_topic_matrix.csv
+│   └── topics_summary.csv
+├── bertopic/
+│   ├── figures/
+│   │   ├── barchart.html
+│   │   ├── intertopic_map.html
+│   │   ├── hierarchy.html
+│   │   ├── heatmap.html
+│   │   ├── documents.html
+│   │   └── topic_correlations.html
+│   ├── document_topic_matrix.csv
+│   ├── topics_summary.csv
+│   ├── topic_info.csv
+│   └── document_info.csv
+├── turftopic/figures/ ...
+├── bunkatopics/figures/ ...
+└── stm/figures/ ...
+```
+
+The HTML files are fully self-contained (Plotly loaded from CDN) and interactive — open them directly in any browser.
 
 ---
 
